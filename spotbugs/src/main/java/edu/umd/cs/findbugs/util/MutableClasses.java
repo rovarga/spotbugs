@@ -9,7 +9,6 @@ import java.util.stream.Stream;
 import org.apache.bcel.Repository;
 import org.apache.bcel.classfile.JavaClass;
 import org.apache.bcel.classfile.Method;
-
 import edu.umd.cs.findbugs.ba.AnalysisContext;
 
 public class MutableClasses {
@@ -91,6 +90,7 @@ public class MutableClasses {
         private ClassAnalysis superAnalysis;
         private Boolean mutable;
         private Boolean serializable;
+        private Boolean externalizable;
 
         ClassAnalysis(JavaClass cls) {
             this.cls = cls;
@@ -113,6 +113,26 @@ public class MutableClasses {
 
             final ClassAnalysis maybeSuper = getSuperAnalysis();
             return maybeSuper != null && maybeSuper.isMutable();
+        }
+
+        private boolean isExternalizable() {
+            Boolean local = externalizable;
+            if (local == null) {
+                externalizable = local = computeExternalizable();
+            }
+            return local;
+        }
+
+        private boolean computeExternalizable() {
+            // We are considering directly-implemented interfaces for now
+            for (String iface : cls.getInterfaceNames()) {
+                if (iface.equals("java.io.Externalizable")) {
+                    return true;
+                }
+            }
+
+            final ClassAnalysis maybeSuper = getSuperAnalysis();
+            return maybeSuper != null && maybeSuper.isExternalizable();
         }
 
         private boolean isSerializable() {
@@ -165,6 +185,12 @@ public class MutableClasses {
                     final String retSig = method.getReturnType().getSignature();
                     // writeReplace() is a special case for Serializable contract
                     if (methodName.equals("writeReplace") && retSig.equals("Ljava/lang/Object;") && isSerializable()) {
+                        continue;
+                    }
+
+                    // writeExternal(ObjectOutput) is part of the Externalizable contract
+                    if (methodName.equals("writeExternal") && method.isPublic()
+                            && method.getSignature().equals("(Ljava/io/ObjectOutput;)V") && isExternalizable()) {
                         continue;
                     }
 
